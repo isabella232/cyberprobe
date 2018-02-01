@@ -21,6 +21,10 @@ class sender_info {
     unsigned short port;
     std::string type;
     std::string description;
+    std::string transport;
+    std::string certificate;
+    std::string key;
+    std::string chain;
 };
 
 class management {
@@ -55,7 +59,8 @@ class management {
 	get_targets(std::map<int, 
 		    std::map<tcpip::ip4_address, std::string> >& t4,
 		    std::map<int,
-		    std::map<tcpip::ip6_address, std::string> >& t6) = 0;
+		    std::map<tcpip::ip6_address, std::string> >& t6,
+		    std::map<std::string, std::string>&) = 0;
 
     // Adds an endpoint
     virtual void add_endpoint(const std::string& host, unsigned int port,

@@ -98,7 +98,7 @@ class delivery : public parameters, public management, public packet_consumer {
     threads::mutex targets_lock;
     std::map<int, std::map<tcpip::ip4_address, std::string> > targets;   // IPv4
     std::map<int, std::map<tcpip::ip6_address, std::string> > targets6;  // IPv6
-    std::map<std::string, std::string> networks;
+    std::map<std::string, std::string> networks; // Maps LIID to network.
 
     // Endpoints
     threads::mutex senders_lock;
@@ -190,7 +190,8 @@ class delivery : public parameters, public management, public packet_consumer {
     virtual void get_targets(std::map<int,
 			     std::map<tcpip::ip4_address, std::string> >& t4,
 			     std::map<int,
-			     std::map<tcpip::ip6_address, std::string> >& t6);
+			     std::map<tcpip::ip6_address, std::string> >& t6,
+			     std::map<std::string, std::string>&);
 
     // Adds an endpoint
     virtual void add_endpoint(const std::string& host,

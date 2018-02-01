@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <queue>
+#include <boost/property_tree/ptree.hpp>
 
 #include <cybermon/socket.h>
 #include <cybermon/thread.h>
@@ -73,20 +74,16 @@ namespace control {
 	void cmd_targets();
 	void cmd_interfaces();
 	void cmd_parameters();
-	void cmd_add_interface(const std::vector<std::string>& lst);
-	void cmd_remove_interface(const std::vector<std::string>& lst);
-	void cmd_add_target(const std::vector<std::string>& lst);
-	void cmd_remove_target(const std::vector<std::string>& lst);
-	void cmd_add_endpoint(const std::vector<std::string>& lst);
-	void cmd_remove_endpoint(const std::vector<std::string>& lst);
+	void cmd_add_interface(const boost::property_tree::ptree&);
+	void cmd_remove_interface(const boost::property_tree::ptree&);
+	void cmd_add_target(const boost::property_tree::ptree&);
+	void cmd_remove_target(const boost::property_tree::ptree&);
+	void cmd_add_endpoint(const boost::property_tree::ptree&);
+	void cmd_remove_endpoint(const boost::property_tree::ptree&);
 	void cmd_help();
-	void cmd_auth(const std::vector<std::string>& lst);
-	void cmd_add_parameter(const std::vector<std::string>& lst);
-	void cmd_remove_parameter(const std::vector<std::string>& lst);
-
-	// Command line tokenisation.
-	static void tokenise(const std::string& line, 
-			     std::vector<std::string>& tok);
+	void cmd_auth(const boost::property_tree::ptree&);
+	void cmd_add_parameter(const boost::property_tree::ptree&);
+	void cmd_remove_parameter(const boost::property_tree::ptree&);
 
 	// OK response.
 	void ok(int status, const std::string& msg);

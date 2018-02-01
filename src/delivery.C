@@ -502,10 +502,12 @@ void delivery::remove_target(const tcpip::address& addr, unsigned int mask)
 void delivery::get_targets(std::map<int, 
 			   std::map<tcpip::ip4_address, std::string> >& t4,
 			   std::map<int,
-			   std::map<tcpip::ip6_address, std::string> >& t6) 
+			   std::map<tcpip::ip6_address, std::string> >& t6,
+			   std::map<std::string, std::string>& n)
 {
     t4 = targets;
     t6 = targets6;
+    n = networks;
 }
 
 // Adds an endpoint

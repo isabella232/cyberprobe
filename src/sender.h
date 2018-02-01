@@ -133,7 +133,16 @@ class nhis11_sender : public sender {
 	info.hostname = h;
 	info.port = p;
 	info.type = "nhis1.1";
-	
+
+	if (tls)
+	    info.transport = "tls";
+	else
+	    info.transport = "tcp";
+
+	info.certificate = params["certificate"];
+	info.key = params["key"];
+	info.chain = params["chain"];
+
 	std::ostringstream buf;
 	buf << "NHIS 1.1 endpoint on " << h << ":" << p;
 	info.description = buf.str();
@@ -232,6 +241,15 @@ class etsi_li_sender : public sender {
 	info.hostname = h;
 	info.port = p;
 	info.type = "etsi";
+
+	if (tls)
+	    info.transport = "tls";
+	else
+	    info.transport = "tcp";
+
+	info.certificate = params["certificate"];
+	info.key = params["key"];
+	info.chain = params["chain"];
 	
 	std::ostringstream buf;
 	buf << "ETSI LI endpoint on " << h << ":" << p;

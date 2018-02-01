@@ -3,8 +3,17 @@
 #include "management.h"
 
 #include <vector>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
+
+using boost::property_tree::ptree;
+using boost::property_tree::read_json;
+using boost::property_tree::write_json;
 
 using namespace control;
+
+// Short alias for this namespace
+namespace pt = boost::property_tree;
 
 // Called by a connection when it terminates to request tidy-up.
 void service::close_me(connection* c)
@@ -82,37 +91,6 @@ void service::run()
 
 }
 
-// Command line tokenisation.  Looks for space-separated tokens, just
-// returns a list of tokens.
-void connection::tokenise(const std::string& line, 
-			  std::vector<std::string>& tok)
-{
-
-	std::string left = line;
-
-	tok.clear();
-
-	while (!left.empty()) {
-
-		left.erase(0, left.find_first_not_of(" \t"));
-	
-		int pos = left.find_first_of(" \t");
-		if (pos != -1) {
-
-			tok.push_back(left.substr(0, pos));
-			left.erase(0, pos+1);
-
-		} else if (!left.empty()) {
-
-			tok.push_back(left);
-			left.clear();
-
-		}
-
-	}
-
-}
-
 // Return an OK response (should be status=200).
 void connection::ok(int status, const std::string& msg)
 {
@@ -147,18 +125,35 @@ void connection::response(int status, const std::string& msg,
 void connection::cmd_endpoints()
 {
 
+    pt::ptree endpoints;
+
     std::list<sender_info> si;
     d.get_endpoints(si);
-    
-    std::ostringstream buf;
     
     for(std::list<sender_info>::iterator it = si.begin();
 	it != si.end();
 	it++) {
-	buf << it->hostname << ":" << it->port << ":" 
-	    << it->type << ":" << it->description << "\n";
+
+	pt::ptree node;
+	node.put("hostname", it->hostname);
+	node.put("port", it->port);
+	node.put("type", it->type);
+	node.put("description", it->description);
+	node.put("transport", it->transport);
+	if (it->key != "")
+	    node.put("key", it->key);
+	if (it->certificate != "")
+	    node.put("certificate", it->certificate);
+	if (it->chain != "")
+	    node.put("chain", it->chain);
+
+	endpoints.push_back(std::make_pair(it->hostname, node));
+
     }
 
+    std::ostringstream buf;
+    pt::write_json(buf, endpoints);
+    
     response(201, "Endpoints list follows.", buf.str());
 
 }
@@ -166,6 +161,8 @@ void connection::cmd_endpoints()
 // 'interfaces' command.
 void connection::cmd_interfaces()
 {
+    
+    pt::ptree interfaces;
 
     std::list<interface_info> ii;
     
@@ -175,15 +172,24 @@ void connection::cmd_interfaces()
 	error(500, e.what());
 	return;
     }
-
-    std::ostringstream buf;
     
     for(std::list<interface_info>::iterator it = ii.begin();
 	it != ii.end();
 	it++) {
-	buf << it->interface << ":" << it->delay << ":" 
-	    << it->filter << "\n";
+
+	pt::ptree node;
+	node.put("interface", it->interface);
+	if (it->delay != 0.0)
+	    node.put("delay", it->delay);
+	if (it->filter != "")
+	    node.put("filter", it->filter);
+
+	interfaces.push_back(std::make_pair(it->interface, node));
+
     }
+
+    std::ostringstream buf;
+    pt::write_json(buf, interfaces);
     
     response(201, "Interfaces list follows.", buf.str());
 
@@ -193,19 +199,21 @@ void connection::cmd_interfaces()
 void connection::cmd_parameters()
 {
 
-    std::map<std::string,std::string> p;
-    
-    d.get_parameters(p);
+    pt::ptree root;
 
-    std::ostringstream buf;
+    std::map<std::string,std::string> p;
+    d.get_parameters(p);
     
     for(std::map<std::string,std::string>::iterator it = p.begin();
 	it != p.end();
 	it++) {
-	buf << it->first << ":" << it->second << "\n";
+	root.put(it->first, it->second);
     }
+
+    std::ostringstream buf;
+    pt::write_json(buf, root);
     
-    response(201, "Paramter list follows.", buf.str());
+    response(201, "Parameters list follows.", buf.str());
 
 }
 
@@ -213,12 +221,13 @@ void connection::cmd_parameters()
 void connection::cmd_targets()
 {
 
+    pt::ptree root;
+
     std::map<int, std::map<tcpip::ip4_address, std::string> > t4;
     std::map<int, std::map<tcpip::ip6_address, std::string> > t6;
-		    
-    d.get_targets(t4, t6);
-
-    std::ostringstream buf;
+    std::map<std::string, std::string> networks;
+    
+    d.get_targets(t4, t6, networks);
 
     for(std::map<int, std::map< tcpip::ip4_address, std::string> >::iterator it
 	    = t4.begin();
@@ -230,8 +239,19 @@ void connection::cmd_targets()
 	    it2 != it->second.end();
 	    it2++) {
 
-	    buf << it2->second << ":" << "ipv4" << ":" 
-		<< it2->first << "/" << it->first << "\n";
+	    std::ostringstream buf2;
+
+	    buf2 << it2->first << "/" << it->first;
+	    
+	    pt::ptree node;
+
+	    node.put("liid", it2->second);
+	    node.put("class", "ipv4");
+	    node.put("address", buf2.str());
+	    if (networks[it2->second] != "")
+		node.put("network", networks[it2->second]);
+
+	    root.push_back(std::make_pair(buf2.str(), node));
 
 	}
     }
@@ -246,83 +266,131 @@ void connection::cmd_targets()
 	    it2 != it->second.end();
 	    it2++) {
 
-	    buf << it2->second << ":" << "ipv6" << ":" 
-		<< it2->first << "/" << it->first << "\n";
+	    std::ostringstream buf2;
+
+	    buf2 << it2->first << "/" << it->first;
+	    
+	    pt::ptree node;
+
+	    node.put("liid", it2->second);
+	    node.put("class", "ipv6");
+	    node.put("address", buf2.str());
+	    if (networks[it2->second] != "")
+		node.put("network", networks[it2->second]);
+
+	    root.push_back(std::make_pair(buf2.str(), node));
 
 	}
 
     }
-    
+
+    std::ostringstream buf;
+    pt::write_json(buf, root);
+        
     response(201, "Targets list follows.", buf.str());
 
 }
 
 // 'add_interface' command.
-void connection::cmd_add_interface(const std::vector<std::string>& lst)
+void connection::cmd_add_interface(const boost::property_tree::ptree& root)
 {
 
-    if (lst.size() != 3 && lst.size() != 4) {
-	error(301, "Usage: add_interface <if> <del> [<fltr>]");
+    std::string iface;
+    try {
+	iface = root.get<std::string>("interface");
+    } catch (...) {
+	error(301, "interface attribute is required");
 	return;
     }
-    
-    std::string iface = lst[1];
-    float delay;
-    std::istringstream buf(lst[2]);
-    buf >> delay;
+
+    float delay = 0.0;
+
+    try {
+    	std::string d = root.get<std::string>("delay");
+	std::istringstream buf(d);
+	buf >> delay;
+    } catch (...) {
+	// Parameter is optional, ignore if not present.
+    }
+
     std::string filter;
-    
-    if (lst.size() == 4)
-	filter = lst[3];
+
+    try {
+    	filter = root.get<std::string>("filter");
+    } catch (...) {
+	// Parameter is optional, ignore if not present.
+    }
     
     try {
 	d.add_interface(iface, filter, delay);
 	ok(200, "Added interface.");
-    } catch (...) {
-	error(500, "Failed to add interface.");
+    } catch (std::exception& e) {
+	error(500, e.what());
     }
 
 }
 
 // 'remove_interface' command.
-void connection::cmd_remove_interface(const std::vector<std::string>& lst)
+void connection::cmd_remove_interface(const boost::property_tree::ptree& root)
 {
 
-    if (lst.size() != 3 && lst.size() != 4) {
-	error(301, "Usage: remove_interface <if> <del> [<fltr>]");
+    std::string iface;
+    try {
+	iface = root.get<std::string>("interface");
+    } catch (...) {
+	error(301, "interface attribute is required");
 	return;
     }
-    
-    std::string iface = lst[1];
-    float delay;
-    std::istringstream buf(lst[2]);
-    buf >> delay;
+
+    float delay = 0.0;
+
+    try {
+    	std::string d = root.get<std::string>("delay");
+	std::istringstream buf(d);
+	buf >> delay;
+    } catch (...) {
+	// Parameter is optional, ignore if not present.
+    }
+
     std::string filter;
+
+    try {
+    	filter = root.get<std::string>("filter");
+    } catch (...) {
+	// Parameter is optional, ignore if not present.
+    }
     
-    if (lst.size() == 4)
-	filter = lst[3];
+    try {
+	d.add_interface(iface, filter, delay);
+	ok(200, "Added interface.");
+    } catch (std::exception& e) {
+	error(500, e.what());
+    }
     
     try {
 	d.remove_interface(iface, filter, delay);
 	ok(200, "Removed interface.");
-    } catch (...) {
-	error(500, "Failed to remove interface.");
+    } catch (std::exception& e) {
+	error(500, e.what());
     }
-    
-    
+
 }
 
 // 'add_target' command.
-void connection::cmd_add_target(const std::vector<std::string>& lst)
+void connection::cmd_add_target(const boost::property_tree::ptree& root)
 {
-
-    if (lst.size() != 4) {
-	error(301, "Usage: add_target <liid> <class> <address>");
+    
+    std::string liid;
+    std::string cls;
+    std::string spec;
+    try {
+	liid = root.get<std::string>("liid");
+	cls = root.get<std::string>("class");
+	spec = root.get<std::string>("address");
+    } catch (...) {
+	error(301, "missing required attributes");
 	return;
     }
-
-    std::string liid = lst[1];
-    std::string cls = lst[2];
 
     if (cls == "ipv4") {
 	
@@ -330,7 +398,7 @@ void connection::cmd_add_target(const std::vector<std::string>& lst)
 
 	    tcpip::ip4_address a4;
 	    unsigned int mask;
-	    tcpip::ip4_address::parse(lst[3], a4, mask);
+	    tcpip::ip4_address::parse(spec, a4, mask);
 
 	    // FIXME: Can't control network parameter.
 	    d.add_target(a4, mask, liid, "");
@@ -350,7 +418,7 @@ void connection::cmd_add_target(const std::vector<std::string>& lst)
 	try {
 	    unsigned int mask;
 	    tcpip::ip6_address a6;
-	    tcpip::ip6_address::parse(lst[3], a6, mask);
+	    tcpip::ip6_address::parse(spec, a6, mask);
 	    // FIXME: Can't control network parameter.
 	    d.add_target(a6, mask, liid, "");
 	} catch (...) {
@@ -368,22 +436,25 @@ void connection::cmd_add_target(const std::vector<std::string>& lst)
 }
 
 // 'remove_target' command.
-void connection::cmd_remove_target(const std::vector<std::string>& lst)
+void connection::cmd_remove_target(const boost::property_tree::ptree& root)
 {
 
-    if (lst.size() != 3) {
-	error(301, "Usage: remove_target <class> <address>");
+    std::string cls;
+    std::string spec;
+    try {
+	cls = root.get<std::string>("class");
+	spec = root.get<std::string>("address");
+    } catch (...) {
+	error(301, "missing required attributes");
 	return;
     }
 
-    std::string cls = lst[1];
-		    
     if (cls == "ipv4") {
 	
 	try {
 	    unsigned int mask;
 	    tcpip::ip4_address a4;
-	    tcpip::ip4_address::parse(lst[2], a4, mask);
+	    tcpip::ip4_address::parse(spec, a4, mask);
 	    d.remove_target(a4, mask);
 	} catch (...) {
 	    error(302, "Failed to parse address.");
@@ -400,7 +471,7 @@ void connection::cmd_remove_target(const std::vector<std::string>& lst)
 	try {
 	    unsigned int mask;
 	    tcpip::ip6_address a6;
-	    tcpip::ip6_address::parse(lst[2], a6, mask);
+	    tcpip::ip6_address::parse(spec, a6, mask);
 	    d.remove_target(a6, mask);
 	} catch (...) {
 	    error(302, "Failed to parse address.");
@@ -417,25 +488,57 @@ void connection::cmd_remove_target(const std::vector<std::string>& lst)
 }
 
 // 'add_endpoint' command.
-void connection::cmd_add_endpoint(const std::vector<std::string>& lst)
+void connection::cmd_add_endpoint(const boost::property_tree::ptree& root)
 {
+    
+    std::string host;
+    int port;
+    std::string type;
+    std::string transport;
+    std::map<std::string, std::string> params;
 
-    if (lst.size() != 5) {
-	error(301, "Usage: add_endpoint <host> <port> <type> <transport>");
+    try {
+	host = root.get<std::string>("host");
+    } catch (...) {
+	error(301, "host attribute is required");
 	return;
     }
-    
-    const std::string& host = lst[1];
-    int port;
-    std::istringstream buf(lst[2]);
-    buf >> port;
-    const std::string& type = lst[3];
-    const std::string& transport = lst[4];
+
+    try {
+	std::istringstream buf(root.get<std::string>("port"));
+	buf >> port;
+    } catch (...) {
+	error(301, "port attribute is required");
+	return;
+    }
+
+    try {
+	type = root.get<std::string>("type");
+    } catch (...) {
+	error(301, "type attribute is required");
+	return;
+    }
+
+    try {
+	transport = root.get<std::string>("transport");
+    } catch (...) {
+	// Transport defaults to tcp.
+	transport = "tcp";
+    }
     
     try {
-
-	// FIXME: Allow parameters to be added.
-	std::map<std::string, std::string> params;
+	params["key"] = root.get<std::string>("key");
+    } catch (...) {}
+    
+    try {
+	params["certificate"] = root.get<std::string>("certificate");
+    } catch (...) {}
+    
+    try {
+	params["chain"] = root.get<std::string>("chain");
+    } catch (...) {}
+    
+    try {
 	d.add_endpoint(host, port, type, transport, params);
 	ok(200, "Added endpoint.");
     } catch (...) {
@@ -445,47 +548,87 @@ void connection::cmd_add_endpoint(const std::vector<std::string>& lst)
 }
 
 // 'remove_endpoint' command.
-void connection::cmd_remove_endpoint(const std::vector<std::string>& lst)
+void connection::cmd_remove_endpoint(const boost::property_tree::ptree& root)
 {
 
-    if (lst.size() != 5) {
-	error(301, "Usage: remove_endpoint <host> <port> <type> <transport>");
+    std::string host;
+    int port;
+    std::string type;
+    std::string transport;
+    std::map<std::string, std::string> params;
+
+    try {
+	host = root.get<std::string>("host");
+    } catch (...) {
+	error(301, "host attribute is required");
 	return;
     }
-    
-    const std::string host = lst[1];
-    int port;
-    std::istringstream buf(lst[2]);
-    buf >> port;
-    const std::string type = lst[3];
-    const std::string transport = lst[4];
+
+    try {
+	std::istringstream buf(root.get<std::string>("port"));
+	buf >> port;
+    } catch (...) {
+	error(301, "port attribute is required");
+	return;
+    }
+
+    try {
+	type = root.get<std::string>("type");
+    } catch (...) {
+	error(301, "type attribute is required");
+	return;
+    }
+
+    try {
+	transport = root.get<std::string>("transport");
+    } catch (...) {
+	// Transport defaults to tcp.
+	transport = "tcp";
+    }
+
+    try {
+	params["key"] = root.get<std::string>("key");
+    } catch (...) {}
     
     try {
-	// FIXME: Allow parameters to be added.
-	std::map<std::string, std::string> params;
+	params["certificate"] = root.get<std::string>("certificate");
+    } catch (...) {}
+    
+    try {
+	params["chain"] = root.get<std::string>("chain");
+    } catch (...) {}
+        
+    try {
 	d.remove_endpoint(host, port, type, transport, params);
 	ok(200, "Removed endpoint.");
     } catch (...) {
 	error(500, "Failed to remove endpoint.");
     }
-    
-    
+        
 }
 
 // 'add_endpoint' command.
-void connection::cmd_add_parameter(const std::vector<std::string>& lst)
+void connection::cmd_add_parameter(const boost::property_tree::ptree& root)
 {
 
-    if (lst.size() != 3) {
-	error(301, "Usage: add_parameter <key> <value>");
+    std::string key;
+    try {
+	key = root.get<std::string>("key");
+    } catch (...) {
+	error(301, "key attribute is required");
 	return;
     }
     
-    std::string key = lst[1];
-    std::string val = lst[2];
+    std::string value;
+    try {
+	value = root.get<std::string>("value");
+    } catch (...) {
+	error(301, "value attribute is required");
+	return;
+    }
     
     try {
-	d.add_parameter(key, val);
+	d.add_parameter(key, value);
 	ok(200, "Added parameter.");
     } catch (...) {
 	error(500, "Failed to add parameter.");
@@ -494,15 +637,16 @@ void connection::cmd_add_parameter(const std::vector<std::string>& lst)
 }
 
 // 'add_endpoint' command.
-void connection::cmd_remove_parameter(const std::vector<std::string>& lst)
+void connection::cmd_remove_parameter(const boost::property_tree::ptree& root)
 {
 
-    if (lst.size() != 2) {
-	error(301, "Usage: remove_parameter <key>");
+    std::string key;
+    try {
+	key = root.get<std::string>("key");
+    } catch (...) {
+	error(301, "key attribute is required");
 	return;
     }
-    
-    std::string key = lst[1];
     
     try {
 	d.remove_parameter(key);
@@ -514,19 +658,21 @@ void connection::cmd_remove_parameter(const std::vector<std::string>& lst)
 }
 
 // 'auth' command.
-void connection::cmd_auth(const std::vector<std::string>& lst)
+void connection::cmd_auth(const boost::property_tree::ptree& root)
 {
-    if (lst.size() != 3) {
-	error(301, "Usage: auth <user> <password>");
-	return;
-    }
+    try {
+	std::string username = root.get<std::string>("username");
+	std::string password = root.get<std::string>("password");
 
-    if (lst[1] == sp.username && lst[2] == sp.password) {
-	auth = true;
-	ok(200, "Authenticated.");
-	return;
-    }
+	if (username == sp.username && password == sp.password) {
+	    auth = true;
+	    ok(200, "Authenticated.");
+	    return;
+	}
 
+    } catch (...) {
+    }
+	
     error(331, "Authentication failure.");
 
 }
@@ -612,26 +758,38 @@ void connection::run()
 
 		std::cerr << "Command: " << line << std::endl;
 
-		// Tokenise.
-		std::vector<std::string> lst;
-		tokenise(line, lst);
+		// Create a root
+		pt::ptree root;
 
-		if (lst.empty()) {
-		    ok(200, "Nothing to do.");
+		std::istringstream buf(line);
+
+		try {
+		    // Load the json file in this ptree
+		    pt::read_json(buf, root);
+		} catch (...) {
+		    error(302, "Cannot parse command.");
 		    continue;
 		}
 
-		if (lst.front() == "help") {
+		std::string command;
+		try {
+		    command = root.get<std::string>("command");
+		} catch (...) {
+		    error(302, "The command attribute is missing.");
+		    continue;
+		}
+
+		if (command == "help") {
 		    cmd_help();
 		    continue;
 		}
-
-		if (lst.front() == "auth") {
-		    cmd_auth(lst);
+		
+		if (command == "auth") {
+		    cmd_auth(root);
 		    continue;
 		}
-
-		if (lst.front() == "quit") {
+		
+		if (command == "quit") {
 		    ok(200, "Tra, then.");
 		    break;
 		}
@@ -643,30 +801,33 @@ void connection::run()
 		    continue;
 		}
 
-		if (lst.front() == "endpoints") {
+		if (command == "endpoints") {
 		    cmd_endpoints();
 		    continue;
 		} 
   
-		if (lst.front() == "targets") {
+		if (command == "targets") {
 		    cmd_targets();
 		    continue;
 		} 
-  
-		if (lst.front() == "interfaces") {
+
+		if (command == "interfaces") {
 		    cmd_interfaces();
 		    continue;
 		}
   
-		if (lst.front() == "parameters") {
+		if (command == "parameters") {
 		    cmd_parameters();
 		    continue;
 		}
-  
-		if (lst.front() == "add_interface") {
-		    cmd_add_interface(lst);
+
+		
+		if (command == "add-interface") {
+		    cmd_add_interface(root);
 		    continue;
 		} 
+
+#ifdef ALDJALSKD
 
 		if (lst.front() == "remove_interface") {
 		    cmd_remove_interface(lst);
@@ -702,7 +863,7 @@ void connection::run()
 		    cmd_remove_parameter(lst);
 		    continue;
 		} 
-
+#endif
 		error(301, "Command not known.");
 
 	    } catch (...) {
