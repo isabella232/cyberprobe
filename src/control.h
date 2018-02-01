@@ -93,7 +93,7 @@ namespace control {
 
 	// Response with payload.
 	void response(int status, const std::string& msg,
-		      const std::string& response);
+		      const boost::property_tree::ptree&);
 
 	// Thread body.
 	virtual void run();

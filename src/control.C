@@ -94,30 +94,48 @@ void service::run()
 // Return an OK response (should be status=200).
 void connection::ok(int status, const std::string& msg)
 {
+
+    boost::property_tree::ptree root;
+    root.put("status", status);
+    root.put("message", msg);
+
     std::ostringstream buf;
-    buf << status << " " << msg << "\n";
+    pt::write_json(buf, root, false);
     s->write(buf.str());
+
     std::cerr << "Reply: " << status << " " << msg << std::endl;
 }
 
 // Return an ERROR response (should be status=3xx or 5xx).
 void connection::error(int status, const std::string& msg)
 {
+
+    boost::property_tree::ptree root;
+    root.put("status", status);
+    root.put("message", msg);
+
     std::ostringstream buf;
-    buf << status << " " << msg << "\n";
+    pt::write_json(buf, root, false);
     s->write(buf.str());
+
     std::cerr << "Reply: " << status << " " << msg << std::endl;
+
 }
 
 // Return an OK response with payload (should be status=201).
 void connection::response(int status, const std::string& msg,
-			  const std::string& resp)
+			  const pt::ptree& resp)
 {
+
+    boost::property_tree::ptree root;
+    root.put("status", status);
+    root.put("message", msg);
+    root.push_back(std::make_pair("response", resp));
+
     std::ostringstream buf;
-    buf << status << " " << msg << "\n" 
-	<< resp.size() << "\n";
+    pt::write_json(buf, root, false);
     s->write(buf.str());
-    s->write(resp);
+
     std::cerr << "Reply: " << status << " " << msg << std::endl;
 }
 
@@ -125,7 +143,7 @@ void connection::response(int status, const std::string& msg,
 void connection::cmd_endpoints()
 {
 
-    pt::ptree endpoints;
+    pt::ptree root;
 
     std::list<sender_info> si;
     d.get_endpoints(si);
@@ -147,14 +165,11 @@ void connection::cmd_endpoints()
 	if (it->chain != "")
 	    node.put("chain", it->chain);
 
-	endpoints.push_back(std::make_pair(it->hostname, node));
+	root.push_back(std::make_pair(it->hostname, node));
 
     }
 
-    std::ostringstream buf;
-    pt::write_json(buf, endpoints);
-    
-    response(201, "Endpoints list follows.", buf.str());
+    response(201, "Endpoints list.", root);
 
 }
 
@@ -162,7 +177,7 @@ void connection::cmd_endpoints()
 void connection::cmd_interfaces()
 {
     
-    pt::ptree interfaces;
+    pt::ptree root;
 
     std::list<interface_info> ii;
     
@@ -184,14 +199,11 @@ void connection::cmd_interfaces()
 	if (it->filter != "")
 	    node.put("filter", it->filter);
 
-	interfaces.push_back(std::make_pair(it->interface, node));
+	root.push_back(std::make_pair(it->interface, node));
 
     }
 
-    std::ostringstream buf;
-    pt::write_json(buf, interfaces);
-    
-    response(201, "Interfaces list follows.", buf.str());
+    response(201, "Interfaces list.", root);
 
 }
 
@@ -210,10 +222,7 @@ void connection::cmd_parameters()
 	root.put(it->first, it->second);
     }
 
-    std::ostringstream buf;
-    pt::write_json(buf, root);
-    
-    response(201, "Parameters list follows.", buf.str());
+    response(201, "Parameters list.", root);
 
 }
 
@@ -283,11 +292,8 @@ void connection::cmd_targets()
 	}
 
     }
-
-    std::ostringstream buf;
-    pt::write_json(buf, root);
         
-    response(201, "Targets list follows.", buf.str());
+    response(201, "Targets list.", root);
 
 }
 
@@ -680,6 +686,8 @@ void connection::cmd_auth(const boost::property_tree::ptree& root)
 // 'help' command.
 void connection::cmd_help()
 {
+
+    /*
     std::ostringstream buf;
 
     buf << "Commands:\n"
@@ -728,8 +736,10 @@ void connection::cmd_help()
 	<< "  parameters\n"
 	<< "      Lists parameters, format is key:value\n"
 	<< "\n";
+    */
 
-    response(201, "Help information follows.", buf.str());
+    pt::ptree help;
+    response(201, "Help information not available.", help);
 }
 
 // ETSI LI connection body, handles a single connection.
