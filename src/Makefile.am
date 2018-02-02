@@ -1,5 +1,5 @@
 
-bin_PROGRAMS = cyberprobe cybermon nhis11-rcvr etsi-rcvr cyberprobe-cli \
+bin_PROGRAMS = cyberprobe cybermon nhis11-rcvr etsi-rcvr \
 	stream-rcvr tls-rcvr
 
 cyberprobe_SOURCES = cyberprobe.C nhis11.C sender.C \
@@ -17,9 +17,6 @@ endif
 
 cybermon_SOURCES = cybermon.C management.h 
 cybermon_LDADD = libcybermon.la -lssl
-
-cyberprobe_cli_SOURCES = cyberprobe-cli.C readline.C readline.h
-cyberprobe_cli_LDADD = libcybermon.la -lssl
 
 nhis11_rcvr_SOURCES = nhis11_rcvr.C nhis11.C
 nhis11_rcvr_LDADD = libcybermon.la -lssl

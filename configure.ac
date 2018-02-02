@@ -74,7 +74,6 @@ AC_SEARCH_LIBS([pcap_create], [pcap],
 		    [AC_DEFINE([HAVE_PCAP_CREATE], 1, 
 		    [Set if pcap_create is supported (added in libpcap 1.0)])])
 AC_CHECK_LIB([pthread], [main], [], [AC_MSG_ERROR(Library pthread missing.)])
-AC_CHECK_LIB([readline], [main], [], [AC_MSG_ERROR(Library readline missing.)])
 AC_CHECK_LIB([ssl], [main], [], [AC_MSG_ERROR(Library ssl missing.)])
 
 AC_CHECK_LIB([dag], [main],
@@ -112,7 +111,7 @@ AC_CHECK_FUNCS([gethostbyname gettimeofday socket strdup uname])
 
 AC_CONFIG_FILES([Makefile src/Makefile include/Makefile config/Makefile
 	docs/Makefile stix/Makefile www/Makefile tests/Makefile tests/atlocal
-	init/Makefile subscribers/Makefile pkg.mk utils/Makefile
+	init/Makefile python/Makefile subscribers/Makefile pkg.mk utils/Makefile
  	cyberprobe.spec])
 
 AC_OUTPUT
