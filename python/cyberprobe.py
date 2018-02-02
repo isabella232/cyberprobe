@@ -13,7 +13,7 @@ class Client:
     def send(self, req):
         data = json.dumps(req) + "\n"
         self.sock.send(data)
-        resp = a.sock.makefile().readline()
+        resp = self.sock.makefile().readline()
         resp = json.loads(resp)
         return resp
 
@@ -53,7 +53,7 @@ class Client:
 
         return l
     
-    def get_params(self):
+    def get_parameters(self):
         req = {"command":"parameters"}
         resp = self.send(req)
         if resp["status"] != "201":
@@ -97,19 +97,21 @@ class Client:
         if resp["status"] != "200":
             raise RuntimeError(resp["message"])
         
-    def add_target(self, liid, address, cls="ipv4"):
+    def add_target(self, liid, address, cls="ipv4", network=None):
 
         req = {"command":"add-target", "liid": liid, "address": address,
                "class": cls}
+        if network: req["network"] = network
             
         resp = self.send(req)
         if resp["status"] != "200":
             raise RuntimeError(resp["message"])
         
-    def remove_target(self, liid, address, cls="ipv4"):
+    def remove_target(self, liid, address, cls="ipv4", network=None):
 
         req = {"command":"remove-target", "liid": liid, "address": address,
                "class": cls}
+        if network: req["network"] = network
             
         resp = self.send(req)
         if resp["status"] != "200":

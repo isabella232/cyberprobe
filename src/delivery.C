@@ -428,7 +428,7 @@ void delivery::add_target(const tcpip::address& addr,
 // Removes a target mapping.
 void delivery::remove_target(const tcpip::address& addr, unsigned int mask) 
 {
-    
+
     targets_lock.lock();
 
     std::string liid;
@@ -436,7 +436,7 @@ void delivery::remove_target(const tcpip::address& addr, unsigned int mask)
     if (addr.universe == addr.ipv4) {
 	
 	const tcpip::ip4_address& a =
-	    reinterpret_cast<const tcpip::ip4_address&>(addr);
+	    reinterpret_cast<const tcpip::ip4_address&>(addr) & mask;
 
 	if (targets.find(mask) == targets.end()) {
 	    // Mask not in the target map.  Silenty ignore.
@@ -465,8 +465,8 @@ void delivery::remove_target(const tcpip::address& addr, unsigned int mask)
     } else {
 
 	const tcpip::ip6_address& a =
-	    reinterpret_cast<const tcpip::ip6_address&>(addr);
-
+	    reinterpret_cast<const tcpip::ip6_address&>(addr) & mask;
+	
 	if (targets6.find(mask) == targets6.end()) {
 	    // Mask not in the target map.  Silenty ignore.
 	    targets_lock.unlock();

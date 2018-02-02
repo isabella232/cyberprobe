@@ -367,13 +367,6 @@ void connection::cmd_remove_interface(const boost::property_tree::ptree& root)
     }
     
     try {
-	d.add_interface(iface, filter, delay);
-	ok(200, "Added interface.");
-    } catch (std::exception& e) {
-	error(500, e.what());
-    }
-    
-    try {
 	d.remove_interface(iface, filter, delay);
 	ok(200, "Removed interface.");
     } catch (std::exception& e) {
@@ -389,6 +382,7 @@ void connection::cmd_add_target(const boost::property_tree::ptree& root)
     std::string liid;
     std::string cls;
     std::string spec;
+    std::string network;
     try {
 	liid = root.get<std::string>("liid");
 	cls = root.get<std::string>("class");
@@ -396,6 +390,11 @@ void connection::cmd_add_target(const boost::property_tree::ptree& root)
     } catch (...) {
 	error(301, "missing required attributes");
 	return;
+    }
+    
+    try {
+	network = root.get<std::string>("network");
+    } catch (...) {
     }
 
     if (cls == "ipv4") {
@@ -405,9 +404,7 @@ void connection::cmd_add_target(const boost::property_tree::ptree& root)
 	    tcpip::ip4_address a4;
 	    unsigned int mask;
 	    tcpip::ip4_address::parse(spec, a4, mask);
-
-	    // FIXME: Can't control network parameter.
-	    d.add_target(a4, mask, liid, "");
+	    d.add_target(a4, mask, liid, network);
 
 	} catch (...) {
 	    error(302, "Failed to parse address.");
@@ -425,11 +422,15 @@ void connection::cmd_add_target(const boost::property_tree::ptree& root)
 	    unsigned int mask;
 	    tcpip::ip6_address a6;
 	    tcpip::ip6_address::parse(spec, a6, mask);
-	    // FIXME: Can't control network parameter.
-	    d.add_target(a6, mask, liid, "");
+	    d.add_target(a6, mask, liid, network);
 	} catch (...) {
 	    error(302, "Failed to parse address.");
 	    return;
+	}
+
+	try {
+	    liid = root.get<std::string>("network");
+	} catch (...) {
 	}
 	
 	ok(200, "Added target.");
@@ -837,43 +838,41 @@ void connection::run()
 		    continue;
 		} 
 
-#ifdef ALDJALSKD
-
-		if (lst.front() == "remove_interface") {
-		    cmd_remove_interface(lst);
+		if (command == "remove-interface") {
+		    cmd_remove_interface(root);
 		    continue;
 		} 
 
-		if (lst.front() == "add_target") {
-		    cmd_add_target(lst);
+		if (command == "add-target") {
+		    cmd_add_target(root);
 		    continue;
 		} 
 
-		if (lst.front() == "remove_target") {
-		    cmd_remove_target(lst);
+		if (command == "remove-target") {
+		    cmd_remove_target(root);
 		    continue;
 		} 
 
-		if (lst.front() == "add_endpoint") {
-		    cmd_add_endpoint(lst);
+		if (command == "add-endpoint") {
+		    cmd_add_endpoint(root);
 		    continue;
 		} 
 
-		if (lst.front() == "remove_endpoint") {
-		    cmd_remove_endpoint(lst);
+		if (command == "remove-endpoint") {
+		    cmd_remove_endpoint(root);
 		    continue;
 		} 
 
-		if (lst.front() == "add_parameter") {
-		    cmd_add_parameter(lst);
+		if (command == "add-parameter") {
+		    cmd_add_parameter(root);
 		    continue;
 		} 
 
-		if (lst.front() == "remove_parameter") {
-		    cmd_remove_parameter(lst);
+		if (command == "remove-parameter") {
+		    cmd_remove_parameter(root);
 		    continue;
 		} 
-#endif
+
 		error(301, "Command not known.");
 
 	    } catch (...) {
