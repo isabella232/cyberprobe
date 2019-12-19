@@ -1,0 +1,57 @@
+{
+
+    "interfaces": [
+        {
+            "interface": "eth0",
+            "delay": 0.5,
+            "filter": "not port 9000"
+        }
+    ],
+
+    "targets": [
+        {
+            "address": "192.168.0.0",
+            "device": "mac",
+            "network": "my-network"
+        },
+        {
+            "address": "192.168.1.0/24",
+            "device": "iot",
+            "network": "my-network"
+        }
+    ],
+
+    "endpoints": [
+        {
+            "type": "etsi",
+            "hostname": "localhost",
+            "port": 9000,
+            "transport": "tcp"
+        }
+    ],
+
+    "parameters": {
+        "country": "DE",
+        "operator": "Cyber",
+        "network_element": "10.8.2.4",
+        "snort.1.liid": "SNORT1",
+        "snort.2.liid": "SNORT2"
+    },
+
+    "controls": [
+        {
+            "port": 2323,
+            "username": "admin",
+            "password": "horse-battery-staple"
+        }
+    ],
+
+    "snort-alerters": [
+        {
+            "duration": 30,
+            "path": "/tmp/alert"
+        }
+    ]
+
+}
+

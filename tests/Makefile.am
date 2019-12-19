@@ -43,7 +43,11 @@ EXTRA_DIST = testsuite.at $(srcdir)/package.m4 $(TESTSUITE) \
 	samples/vlan.pcap.indicators samples/vlan.pcap.monitor \
         samples/ipv6-smtp.pcap samples/ipv6-smtp.pcap.model \
 	samples/ipv6-smtp.pcap.indicators samples/ipv6-smtp.pcap.monitor \
-	samples/tcp.pcap.model summarise_json
+	samples/tcp.pcap.model \
+	samples/tls.pcap samples/tls-with-cert.pcap \
+	samples/tls.pcap.model samples/tls-with-cert.pcap.model \
+	samples/tls.pcap.monitor samples/tls-with-cert.pcap.monitor \
+	summarise_json
 
 TESTSUITE = $(srcdir)/testsuite
 DISTCLEANFILES = $(TESTSUITE) atconfig
@@ -67,14 +71,18 @@ AM_CPPFLAGS = -I$(srcdir)/../include -I${srcdir}/../src
 
 noinst_PROGRAMS = test_socket test_resource test_address_map
 
-test_socket_SOURCES = test_socket.C
-test_socket_LDADD = ../src/libcybermon.la -lssl
+test_socket_SOURCES = test_socket.C ../src/network/socket.C \
+	../include/cyberprobe/network/socket.h
+test_socket_LDADD =
 
-test_resource_SOURCES = test_resource.C
-test_resource_LDADD = ../src/libcybermon.la -lssl
+test_resource_SOURCES = test_resource.C ../src/resources/resource_manager.C \
+	../include/cyberprobe/resources/resource.h
+test_resource_LDADD =
 
-test_address_map_SOURCES = test_address_map.C
-test_address_map_LDADD = ../src/libcybermon.la -lssl
+test_address_map_SOURCES = test_address_map.C	\
+        ../include/cyberprobe/util/address_map.h
+
+test_address_map_LDADD =
 
 $(TESTSUITE): $(srcdir)/testsuite.at $(srcdir)/package.m4
 	$(AUTOTEST) -I '$(srcdir)' -o $@.tmp $@.at

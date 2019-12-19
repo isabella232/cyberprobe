@@ -7,27 +7,30 @@ NHIS 1.1 test receiver.  Usage:
 
 ****************************************************************************/
 
-#include <cybermon/monitor.h>
-#include <cybermon/nhis11.h>
-#include <cybermon/thread.h>
-#include <cybermon/packet_capture.h>
+#include <cyberprobe/protocol/pdu.h>
+#include <cyberprobe/protocol/address.h>
+#include <cyberprobe/analyser/monitor.h>
+#include <cyberprobe/stream/nhis11.h>
+#include <cyberprobe/pkt_capture/packet_capture.h>
+
+#include <thread>
+#include <mutex>
 
 #include <getopt.h>
 
-class output : public monitor {
+using namespace cyberprobe;
+
+class output : public analyser::monitor {
 private:
-    pcap_writer& p;
-    threads::mutex lock;
+    pcap::writer& p;
+    std::mutex mutex;
 public:
-    output(pcap_writer& p) : p(p) {}
+    output(cyberprobe::pcap::writer& p) : p(p) {}
     virtual void operator()(const std::string& liid,
 			    const std::string& network,
-			    const std::vector<unsigned char>::iterator& s,
-			    const std::vector<unsigned char>::iterator& e,
-			    const timeval& tv, cybermon::direction d) {
-	lock.lock();
-	p.write(s, e);
-	lock.unlock();
+                            protocol::pdu_slice s) {
+        std::lock_guard<std::mutex> lock(mutex);
+	p.write(s.start, s.end);
     }
 
     // These events aren't trigger by NHIS 1.1.
@@ -53,11 +56,11 @@ int main(int argc, char** argv)
 	int port;
 	buf >> port;
 
-	pcap_writer p;
+        cyberprobe::pcap::writer p;
 
 	output o(p);
 
-	cybermon::nhis11::receiver r(port, o);
+	cyberprobe::nhis11::receiver r(port, o);
 
 	r.start();
 	r.join();

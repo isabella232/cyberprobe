@@ -1,9 +1,9 @@
 
 /****************************************************************************
 
-****************************************************************************
-*** OVERVIEW
-****************************************************************************
+ ****************************************************************************
+ *** OVERVIEW
+ ****************************************************************************
 
 Simple monitor.  Takes ETSI streams from cyberprobe, and reports on various
 occurances.
@@ -20,110 +20,176 @@ Usage:
 
 #include <boost/program_options.hpp>
 
-#include <cybermon/engine.h>
-#include <cybermon/monitor.h>
-#include <cybermon/etsi_li.h>
-#include <cybermon/packet_capture.h>
-#include <cybermon/context.h>
-#include <cybermon/cybermon-lua.h>
-#include <cybermon_qwriter.h>
-#include <cybermon_qreader.h>
-#include <cybermon/pdu.h>
+#include <cyberprobe/protocol/pdu.h>
+#include <cyberprobe/protocol/address.h>
+#include <cyberprobe/protocol/context.h>
+#include <cyberprobe/analyser/engine.h>
+#include <cyberprobe/analyser/monitor.h>
+#include <cyberprobe/analyser/lua.h>
+#include <cyberprobe/pkt_capture/packet_capture.h>
+#include <cyberprobe/stream/vxlan.h>
+#include <cyberprobe/stream/etsi_li.h>
+#include <cyberprobe/event/event_queue.h>
+#include <cyberprobe/event/event.h>
 
-// Monitor class, implements the monitor interface to receive data.
-class etsi_monitor : public monitor {
+using namespace cyberprobe;
+using namespace cyberprobe::protocol;
+using namespace cyberprobe::analyser;
+
+class lua_engine : event::observer {
+private:
+    std::thread* thr;
+
+public:
+    engine& m;
+    event::queue& q;
+    lua cml;
+    
+    lua_engine(engine& m,
+               event::queue& q,
+               const std::string& config) :
+        m(m), q(q), cml(config) {}
+
+    virtual ~lua_engine() {}
+
+    virtual void run() {
+        q.run(*this);
+    }
+
+    virtual void handle(std::shared_ptr<event::event> e) {
+        cml.event(m, e);
+    }
+
+    virtual void stop() {
+        // Put null pointer on queue to indicate end of stream.
+        q.stop();
+    }
+    
+    virtual void join() {
+        if (thr) thr->join();
+    }
+    
+    virtual void start() {
+        thr = new std::thread(&lua_engine::run, this);
+    }
+    
+};
+
+class protocol_engine : public engine {
 private:
 
     // Analysis engine
-    cybermon::engine& an;
+    event::queue& q;
 
 public:
-
-    // Short-hand for vector iterator.
-    typedef std::vector<unsigned char>::iterator iter;
 
     // Constructor.
-    etsi_monitor(cybermon::engine& an) : an(an) {}
+    protocol_engine(event::queue& q) : q(q) {}
 
+    virtual void handle(std::shared_ptr<event::event> e) {
+        q.push(e);
+    }
+
+    typedef std::vector<unsigned char>::const_iterator iter;
+
+    using engine::target_up;
+    using engine::target_down;
+    
     // Called when a PDU is received.
-    virtual void operator()(const std::string& liid,
+    virtual void operator()(const std::string& device,
 			    const std::string& network,
-			    const iter& s, const iter& e,
-			    const struct timeval& tv, cybermon::direction d);
-
-    // Called when attacker is discovered.
-    void target_up(const std::string& liid,
-		   const std::string& network,
-		   const tcpip::address& addr,
-		   const struct timeval& tv);
-
-    // Called when attacker is disconnected.
-    void target_down(const std::string& liid,
-		     const std::string& network,
-		     const struct timeval& tv);
+                            pdu_slice p) {
+        try {
+            // Process the PDU
+            engine::process(device, network, p);
+        } catch (std::exception& e) {
+            // Processing failure event.
+            std::cerr << "Packet failed: " << e.what() << std::endl;
+        }
+    }
 
 };
 
-// Called when attacker is discovered.
-void etsi_monitor::target_up(const std::string& liid,
-			     const std::string& network,
-			     const tcpip::address& addr,
-			     const struct timeval& tv)
-{
-    an.target_up(liid, network, addr, tv);
-}
-
-// Called when attacker is discovered.
-void etsi_monitor::target_down(const std::string& liid,
-			       const std::string& network,
-			       const struct timeval& tv)
-{
-    an.target_down(liid, network, tv);
-}
-
-// Called when a PDU is received.
-void etsi_monitor::operator()(const std::string& liid,
-			      const std::string& network,
-			      const iter& s, const iter& e,
-			      const struct timeval& tv, cybermon::direction d)
-{
-
-    try {
-
-	// Process the PDU
-        an.process(liid, network, cybermon::pdu_slice(s, e, tv, d));
-
-    } catch (std::exception& e) {
-
-	// Processing failure event.
-	std::cerr << "Packet failed: " << e.what() << std::endl;
-
-    }
-
-}
-
-class pcap_input : public pcap_reader {
+class pcap_input : public pcap::packet_handler {
 private:
-    cybermon::engine& e;
-    int count;
+    engine& e;
+    std::string device;
+
 
 public:
-    pcap_input(const std::string& f, cybermon::engine& e) :
-	pcap_reader(f), e(e) {
-	count = 0;
-    }
+    pcap_input(engine& e, const std::string& device) :
+	e(e), device(device)
+        {
+        }
 
-    virtual void handle(timeval tv, unsigned long len, unsigned long captured,
-			const unsigned char* f);
+    virtual void handle(timeval tv, unsigned long len, const unsigned char* f);
+
+    virtual int get_datalink() = 0;
 
 };
 
+class interface_input : public pcap_input, public pcap::interface {
 
-void pcap_input::handle(timeval tv, unsigned long len, unsigned long captured,
-			const unsigned char* f)
+private:
+    std::thread* thr;
+
+public:
+    interface_input(const std::string& iface, engine& e,
+               const std::string& device) :
+        pcap_input(e, device), interface(*this, iface)
+        {
+        }
+
+    virtual void join() {
+	if (thr)
+	    thr->join();
+    }
+    
+    virtual void start() {
+	thr = new std::thread(&interface::run, this);
+    }
+
+    virtual void stop() {
+	interface::stop();
+    }
+
+    virtual int get_datalink() { return pcap_datalink(p); }
+
+};
+
+class file_input : public pcap_input, public pcap::reader {
+
+private:
+    std::thread* thr;
+
+public:
+    file_input(const std::string& file, engine& e,
+               const std::string& device) :
+        pcap_input(e, device), reader(*this, file)
+        {
+        }
+
+    virtual void join() {
+	if (thr)
+	    thr->join();
+    }
+    
+    virtual void start() {
+	thr = new std::thread(&reader::run, this);
+    }
+
+    virtual void stop() {
+	reader::stop();
+    }
+
+    virtual int get_datalink() { return pcap_datalink(p); }
+
+};
+
+void pcap_input::handle(timeval tv, unsigned long len, const unsigned char* f)
 {
 
-    int datalink = pcap_datalink(p);
+    int datalink = get_datalink();
 
     try {
 
@@ -136,13 +202,10 @@ void pcap_input::handle(timeval tv, unsigned long len, unsigned long captured,
 	    if (f[12] == 0x08 && f[13] == 0) {
 
 		std::vector<unsigned char> v;
-		v.assign(f + 14, f + captured);
+		v.assign(f + 14, f + len);
 
-		// FIXME: Hard-coded?!
-		std::string liid = "PCAP";
-
-		e.process(liid, "",
-			  cybermon::pdu_slice(v.begin(), v.end(), tv));
+		e.process(device, "",
+			  pdu_slice(v.begin(), v.end(), tv));
 
 	    }
 
@@ -150,13 +213,10 @@ void pcap_input::handle(timeval tv, unsigned long len, unsigned long captured,
 	    if (f[12] == 0x86 && f[13] == 0xdd) {
 
 		std::vector<unsigned char> v;
-		v.assign(f + 14, f + captured);
+		v.assign(f + 14, f + len);
 
-		// FIXME: Hard-coded?!
-		std::string liid = "PCAP";
-
-		e.process(liid, "",
-			  cybermon::pdu_slice(v.begin(), v.end(), tv));
+		e.process(device, "",
+			  pdu_slice(v.begin(), v.end(), tv));
 
 	    }
 
@@ -167,13 +227,10 @@ void pcap_input::handle(timeval tv, unsigned long len, unsigned long captured,
 		if (f[16] == 0x08 && f[17] == 0) {
 
 		    std::vector<unsigned char> v;
-		    v.assign(f + 18, f + captured);
+		    v.assign(f + 18, f + len);
 
-		    // FIXME: Hard-coded?!
-		    std::string liid = "PCAP";
-
-		    e.process(liid, "",
-			      cybermon::pdu_slice(v.begin(), v.end(), tv));
+		    e.process(device, "",
+			      pdu_slice(v.begin(), v.end(), tv));
 
 		}
 
@@ -181,13 +238,10 @@ void pcap_input::handle(timeval tv, unsigned long len, unsigned long captured,
 		if (f[16] == 0x86 && f[17] == 0xdd) {
 
 		    std::vector<unsigned char> v;
-		    v.assign(f + 18, f + captured);
+		    v.assign(f + 18, f + len);
 
-		    // FIXME: Hard-coded?!
-		    std::string liid = "PCAP";
-
-		    e.process(liid, "",
-			      cybermon::pdu_slice(v.begin(), v.end(), tv));
+		    e.process(device, "",
+			      pdu_slice(v.begin(), v.end(), tv));
 
 		}
 
@@ -198,15 +252,12 @@ void pcap_input::handle(timeval tv, unsigned long len, unsigned long captured,
 	if (datalink == DLT_RAW) {
 
 	    std::vector<unsigned char> v;
-	    v.assign(f, f + captured);
-
-	    // FIXME: Hard-coded?!
-	    std::string liid = "PCAP";
+	    v.assign(f, f + len);
 
 	    std::string str( v.begin(), v.end() );
 
-	    e.process(liid, "",
-		      cybermon::pdu_slice(v.begin(), v.end(), tv));
+	    e.process(device, "",
+		      pdu_slice(v.begin(), v.end(), tv));
 
 	}
 
@@ -223,8 +274,12 @@ int main(int argc, char** argv)
 
     std::string key, cert, chain;
     unsigned int port = 0;
-    std::string pcap_file, config_file;
+    unsigned int vxlan_port = 0;
+    std::string pcap_input, config_file;
     std::string transport;
+    std::string device;
+    std::string interface;
+    float time_limit = -1;
 
     po::options_description desc("Supported options");
     desc.add_options()
@@ -237,9 +292,17 @@ int main(int argc, char** argv)
 	 "server public key file")
 	("trusted-ca,T", po::value<std::string>(&chain), "server trusted CAs")
 	("port,p", po::value<unsigned int>(&port), "port number to listen on")
-	("pcap,f", po::value<std::string>(&pcap_file), "PCAP file to read")
+	("pcap,f", po::value<std::string>(&pcap_input), "PCAP file to read")
+	("interface,i", po::value<std::string>(&interface),
+         "Interface to monitor")
+	("vxlan,V", po::value<unsigned int>(&vxlan_port),
+         "VXLAN port to listen on")
+        ("time-limit,L", po::value<float>(&time_limit),
+         "Describes a time limit (seconds) after which to stop.")
 	("config,c", po::value<std::string>(&config_file),
-	 "LUA configuration file");
+	 "LUA configuration file")
+        ("device,d", po::value<std::string>(&device),
+         "Device ID to use for PCAP file");
 
     po::variables_map vm;
     try {
@@ -251,13 +314,13 @@ int main(int argc, char** argv)
 	if (config_file == "")
 	    throw std::runtime_error("Configuration file must be specified.");
 
-	if (pcap_file == "" && port == 0)
-	    throw std::runtime_error("Must specify a PCAP file or a port.");
+	if (pcap_input == "" && port == 0 && vxlan_port == 0 && interface == "")
+	    throw std::runtime_error("Must specify PCAP file, interface, port or VXLAN input.");
 
-	if (pcap_file != "" && port != 0)
-	    throw std::runtime_error("Specify EITHER a PCAP file OR a port.");
+	if (pcap_input != "" && port != 0)
+	    throw std::runtime_error("Can't specify both PCAP file and port.");
 
-	if (pcap_file == "") {
+	if (port != 0) {
 
 	    if (transport != "tls" && transport != "tcp")
 		throw std::runtime_error("Transport most be one of: tcp, tls");
@@ -288,64 +351,108 @@ int main(int argc, char** argv)
 
     try {
 
-	//queue to store the incoming packets to be processed
-    std::queue<q_entry*>	cqueue;
+	// queue to store the incoming packets to be processed
+        event::queue queue;
 
-    // Input queue: Lock,
-    threads::mutex cqwrlock;
+        protocol_engine pe(queue);
+        lua_engine le(pe, queue, config_file);
 
-    //creating cybermon_qwriter and cybermon_qreader
-    cybermon::cybermon_qwriter cqw(config_file, cqueue, cqwrlock);
-    cybermon::cybermon_qreader cqr(config_file, cqueue, cqwrlock, cqw);
+	if (interface != "") {
 
-    //starting qreader and then qwriter
-    cqr.start();
-    cqw.start();
+            if (device == "") device = "PCAP";
 
-	if (pcap_file != "") {
+            interface_input pin(interface, pe, device);
 
-		pcap_input pin(pcap_file, cqw);
-	    pin.run();
+            le.start();
+            pin.start();
+
+            if (time_limit > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                                                long(time_limit * 1000)));
+                pin.stop();
+            }
+
+            pin.join();
+
+        } else if (pcap_input != "") {
+
+            if (device == "") device = "PCAP";
+            file_input pin(pcap_input, pe, device);
+
+            le.start();
+            pin.start();
+
+            if (time_limit > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                                                long(time_limit * 1000)));
+                pin.stop();
+            }
+
+            pin.join();
+
+        } else if (vxlan_port != 0) {
+
+            vxlan::receiver r(vxlan_port, pe);
+
+            // Over-ride VNI??? device for VXLAN if device was specified
+            // on command line.
+            if (device != "")
+                r.device = device;
+
+            le.start();
+            r.start();
+
+            if (time_limit > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                                                long(time_limit * 1000)));
+                r.stop();
+            }
+
+            r.join();
 
 	} else if (transport == "tls") {
 
-	    boost::shared_ptr<tcpip::ssl_socket> sock(new tcpip::ssl_socket);
+	    std::shared_ptr<tcpip::ssl_socket> sock(new tcpip::ssl_socket);
 	    sock->bind(port);
 	    sock->use_key_file(key);
 	    sock->use_certificate_file(cert);
 	    sock->use_certificate_chain_file(chain);
 	    sock->check_private_key();
 
-	    // Create the monitor instance, receives ETSI events, and processes
-	    // data.
-	    etsi_monitor m(cqw);
-
 	    // Start an ETSI receiver.
-	    cybermon::etsi_li::receiver r(sock, m);
+	    etsi_li::receiver r(sock, pe);
+
+            le.start();
 	    r.start();
 
-	    // Wait forever.
+            if (time_limit > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                                                long(time_limit * 1000)));
+                r.stop();
+            }
+
 	    r.join();
 
 	} else {
 
-	    // Create the monitor instance, receives ETSI events, and processes
-	    // data.
-		etsi_monitor m(cqw);
 	    // Start an ETSI receiver.
-	    cybermon::etsi_li::receiver r(port, m);
+	    etsi_li::receiver r(port, pe);
+
+            le.start();
 	    r.start();
 
-	    // Wait forever.
+            if (time_limit > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                                                long(time_limit * 1000)));
+                r.stop();
+            }
+
 	    r.join();
 
 	}
 
-	// here
-	//writer close to flag reader to stop
-	//join reader
-	cqw.close();
-	cqr.join();
+        le.stop();
+        le.join();
 
     } catch (std::exception& e) {
 

@@ -2,9 +2,9 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.68])
-AC_INIT([cyberprobe], [1.13.4], [https://github.com/cybermaggedon/cyberprobe])
-AM_INIT_AUTOMAKE([-Wall -Werror])
-AC_CONFIG_SRCDIR([src/target.h])
+AC_INIT([cyberprobe], [2.3.14], [cyberprobe-discussion@googlegroups.com])
+AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects foreign])
+AC_CONFIG_SRCDIR([src/cyberprobe.C])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_TESTDIR([tests])
@@ -45,8 +45,49 @@ AM_PATH_PYTHON([3.0])
 
 # Check for Boost.
 BOOST_REQUIRE
-BOOST_REGEX([mt])
 BOOST_PROGRAM_OPTIONS
+
+# Protobuf
+PKG_CHECK_MODULES([PROTOBUF], [protobuf >= 3.0.0],
+    [with_protobuf=yes],
+    [with_protobuf=no])
+
+AS_IF([test "x$with_protobuf" != "xno"],
+    [AC_SUBST([WITH_PROTOBUF], [$with_protobuf])
+     AC_DEFINE([WITH_PROTOBUF], 1, [Set if protobuf compiler is available])])
+
+AM_CONDITIONAL([WITH_PROTOBUF], [test "x$with_protobuf" != "xno"])
+
+AC_SUBST([PROTOBUF_LIBS])
+AC_SUBST([PROTOBUF_CFLAGS])
+
+# ProtoBuf compiler.
+# First, specify with --with-protoc=/path/of/protoc.
+# Or, specify with env variable PROTOC.
+# If neither of the above, find it in the path.
+#AC_MSG_CHECKING([for ProtoBuf compiler protoc])
+AC_ARG_WITH([protoc],
+    [AS_HELP_STRING([--with-protoc=/path/of/protoc],
+        [Location of the protocol buffers compiler protoc. Defaults to looking on path.])],
+    [PROTOC="$withval"],
+    [ AS_IF([test "x${PROTOC}" == "x"],
+        [AC_PATH_PROG([PROTOC], [protoc], [no])])
+    ]
+)
+
+# GRPC++ which is optional.
+PKG_CHECK_MODULES([GRPC], [grpc++ >= 1.0.0 grpc >= 5.0.0],
+    [with_grpc=yes],
+    [with_grpc=no])
+
+AS_IF([test "x$with_grpc" != "xno"],
+    [AC_SUBST([WITH_GRPC], [$with_grpc])
+     AC_DEFINE([WITH_GRPC], 1, [Set if grpc++ is available])])
+
+AM_CONDITIONAL([WITH_GRPC], [test "x$with_grpc" != "xno"])
+
+AC_SUBST([GRPC_CFLAGS])
+AC_SUBST([GRPC_LIBS])
 
 # Lua
 AX_PROG_LUA([5.1], [], [], [AC_MSG_ERROR([Lua interpreter missing.])])
@@ -54,25 +95,18 @@ AX_LUA_HEADERS([], [AC_MSG_ERROR([Lua headers missing.])])
 AX_LUA_LIBS([], [AC_MSG_ERROR([Lua library missing.])])
 
 # Check for some Lua modules.
-AC_MSG_CHECKING([Lua socket module])
-AS_IF([echo 'if require("socket") then print("yes") end' | lua -], [],
-	    [AC_MSG_ERROR([Lua socket module is not installed.])])
-AC_MSG_CHECKING([Lua json.encode module])
-AS_IF([echo 'if require("json.encode") then print("yes") end' | lua -], [],
-	    [AC_MSG_ERROR([Lua json.encode module is not installed.])])
-AC_MSG_CHECKING([Lua sha1 module])
-AS_IF([echo 'if require("sha1") then print("yes") end' | lua -], [],
-	    [AC_MSG_ERROR([Lua sha1 module is not installed.])])
-AC_MSG_CHECKING([Lua uuid module])
-AS_IF([echo 'if require("uuid") then print("yes") end' | lua -], [],
-	    [AC_MSG_ERROR([Lua uuid module is not installed.])])
+# AC_MSG_CHECKING([Lua socket module])
+# AS_IF([echo 'if require("socket") then print("yes") end' | lua -], [],
+# 	    [AC_MSG_ERROR([Lua socket module is not installed.])])
 
-AC_CHECK_LIB([expat], [main], [], [AC_MSG_ERROR(Library expat missing.)])
 AC_CHECK_LIB([ncurses], [main], [], [AC_MSG_ERROR(Library ncurses missing.)])
 AC_CHECK_LIB([pcap], [main], [], [AC_MSG_ERROR(Library pcap missing.)])
 AC_SEARCH_LIBS([pcap_create], [pcap],
 		    [AC_DEFINE([HAVE_PCAP_CREATE], 1,
 		    [Set if pcap_create is supported (added in libpcap 1.0)])])
+AC_SEARCH_LIBS([pcap_set_timeout], [pcap],
+		    [AC_DEFINE([HAVE_PCAP_SET_TIMEOUT], 1,
+		    [Set if pcap_set_timeout is supported])])
 AC_CHECK_LIB([pthread], [main], [], [AC_MSG_ERROR(Library pthread missing.)])
 AC_CHECK_LIB([readline], [main], [], [AC_MSG_ERROR(Library readline missing.)])
 AC_CHECK_LIB([ssl], [main], [], [AC_MSG_ERROR(Library ssl missing.)])

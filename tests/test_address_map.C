@@ -1,8 +1,11 @@
 
-#include "address_map.h"
-#include <cybermon/socket.h>
+#include <cyberprobe/network/socket.h>
+#include <cyberprobe/util/address_map.h>
 #include <string>
 #include <assert.h>
+
+using namespace cyberprobe;
+using namespace cyberprobe::util;
 
 class bunchy {
 public:
@@ -66,9 +69,9 @@ void test6() {
     address_map<tcpip::ip6_address, bunchy> map;
 
     map.insert(tcpip::ip6_address("a1ff:ee:cc:dd::0"), 64,
-	       bunchy("lemon", "bill"));
+               bunchy("lemon", "bill"));
     map.insert(tcpip::ip6_address("a1ff:ee::0"), 32,
-	       bunchy("apple", "fred"));
+               bunchy("apple", "fred"));
 
     bunchy* b;
 
